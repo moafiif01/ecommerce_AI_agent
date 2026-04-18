@@ -1,45 +1,48 @@
 import json
 import logging
+import re
 import uuid
 from typing import Any, Dict, List, Optional
 
 from flask import current_app
-from langchain.agents import AgentType, initialize_agent
-from langchain.memory import ConversationBufferWindowMemory
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
-from langchain.tools import Tool
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from models.chat_session import ChatSession
 from models.message import Message
 from models.product import Product
 
 from .cart_service import CartService
 from .product_service import ProductService
+from .support_agent_service import SupportAgentService
 from .vector_service import VectorService
 
 logger = logging.getLogger(__name__)
 
 
+class SimpleConversationMemory:
+    def __init__(self):
+        self.buffer = []
+
+
 class ChatService:
-    """Enhanced chat service with LangChain and Gemini integration"""
+    """Enhanced chat service with LangChain and Groq integration"""
 
     def __init__(self):
         self.llm = None
         self.vector_service = VectorService()
         self.product_service = ProductService()
-        self.cart_service = CartService()
+        self.support_agent_service = SupportAgentService()
         self.memory_sessions = {}
         self.initialized = False
 
     def initialize(self):
         """Initialize LangChain components"""
         try:
-            self.llm = ChatGoogleGenerativeAI(
-                model="gemini-2.0-flash",
-                google_api_key=current_app.config["GOOGLE_API_KEY"],
+            self.llm = ChatGroq(
+                model=current_app.config["GROQ_MODEL"],
+                groq_api_key=current_app.config["GROQ_API_KEY"],
                 temperature=0.7,
                 max_tokens=1000,
-                convert_system_message_to_human=True,
             )
 
             self.vector_service.initialize()
@@ -51,44 +54,35 @@ class ChatService:
             logger.error(f"Failed to initialize chat service: {str(e)}")
             raise
 
-    def get_or_create_memory(self, session_id: str) -> ConversationBufferWindowMemory:
+    def get_or_create_memory(self, session_id: str) -> SimpleConversationMemory:
         """Get or create memory for a chat session"""
         if session_id not in self.memory_sessions:
-            self.memory_sessions[session_id] = ConversationBufferWindowMemory(
-                k=10,
-                return_messages=True,
-                memory_key="chat_history",
-            )
+            self.memory_sessions[session_id] = SimpleConversationMemory()
         return self.memory_sessions[session_id]
 
-    def create_tools(self) -> List[Tool]:
+    def create_tools(self) -> List[Dict[str, Any]]:
         """Create tools for the LangChain agent"""
         tools = [
-            Tool(
-                name="search_products",
-                description="Find products using semantic search. Input: search query (str).",
-                func=self._search_products_tool,
-            ),
-            Tool(
-                name="filter_products",
-                description="Filter products. Input: JSON string with keys: category, subcategory, brand, min_price, max_price, min_rating, in_stock_only, features (list), search_query, limit.",
-                func=self._filter_products_tool,
-            ),
-            Tool(
-                name="get_product_details",
-                description="Get product details. Input: product ID (str).",
-                func=self._get_product_details_tool,
-            ),
-            Tool(
-                name="get_recommendations",
-                description="Get recommendations. Input: product ID (str) or preference description (str).",
-                func=self._get_recommendations_tool,
-            ),
-            Tool(
-                name="add_to_cart",
-                description="Add a product to the user's cart. Input: JSON string with keys: product_id (str), quantity (int, optional, default 1).",
-                func=self._add_to_cart_tool,
-            ),
+            {
+                "name": "search_products",
+                "description": "Find products using semantic search. Input: search query (str).",
+                "func": self._search_products_tool,
+            },
+            {
+                "name": "filter_products",
+                "description": "Filter products. Input: JSON string with keys: category, subcategory, brand, min_price, max_price, min_rating, in_stock_only, features (list), search_query, limit.",
+                "func": self._filter_products_tool,
+            },
+            {
+                "name": "get_product_details",
+                "description": "Get product details. Input: product ID (str).",
+                "func": self._get_product_details_tool,
+            },
+            {
+                "name": "get_recommendations",
+                "description": "Get recommendations. Input: product ID (str) or preference description (str).",
+                "func": self._get_recommendations_tool,
+            },
         ]
         return tools
 
@@ -215,89 +209,6 @@ class ChatService:
             logger.error(f"Error in get_recommendations_tool: {str(e)}")
             return "Error occurred while getting recommendations."
 
-    def _add_to_cart_tool(self, input_json: str) -> str:
-        """Tool function to add a product to the user's cart"""
-        try:
-            # Log the input for debugging
-            logger.info(f"add_to_cart_tool input: {input_json}")
-            
-            data = json.loads(input_json)
-            product_id = data.get("product_id")
-            quantity = data.get("quantity", 1)
-            user_id = data.get("user_id", "guest_user")
-
-            logger.info(f"Parsed data: product_id={product_id}, quantity={quantity}, user_id={user_id}")
-
-            if not product_id:
-                return json.dumps(
-                    {"message": "Missing product_id for add to cart.", "success": False}
-                )
-
-            # If product_id looks like a product name, try to find the actual product
-            if len(product_id) < 32 or " " in product_id:
-                logger.info(f"Searching for product by name: {product_id}")
-                # Search for product by name (case-insensitive)
-                product = Product.query.filter(
-                    Product.name.ilike(f"%{product_id}%")
-                ).first()
-                
-                if product:
-                    logger.info(f"Found product: {product.name} with ID: {product.id}")
-                    product_id = product.id
-                else:
-                    logger.warning(f"Product not found: {product_id}")
-                    return json.dumps(
-                        {
-                            "message": f"Product '{product_id}' not found.",
-                            "success": False,
-                        }
-                    )
-
-            # Add to cart using the cart service
-            logger.info(f"Adding to cart: user_id={user_id}, product_id={product_id}, quantity={quantity}")
-            result = self.cart_service.add_to_cart(user_id, product_id, quantity)
-            logger.info(f"Cart service result: {result}")
-            
-            # Check if the cart service returned an error
-            if not result.get("success", True):
-                return json.dumps(result)
-            
-            # Get product details for response
-            product = Product.query.get(product_id)
-            if not product:
-                return json.dumps(
-                    {
-                        "message": f"Product with ID {product_id} not found.",
-                        "success": False,
-                    }
-                )
-
-            success_response = {
-                "message": f"Added {quantity} x {product.name} to your cart.",
-                "success": True,
-                "product": {
-                    "id": product.id,
-                    "name": product.name,
-                    "price": product.price,
-                },
-                "quantity": quantity,
-            }
-            
-            logger.info(f"Returning success response: {success_response}")
-            return json.dumps(success_response)
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error in add_to_cart_tool: {str(e)}")
-            logger.error(f"Input that caused error: {repr(input_json)}")
-            return json.dumps(
-                {"message": "Invalid JSON format in request.", "success": False}
-            )
-        except Exception as e:
-            logger.error(f"Error in add_to_cart_tool: {str(e)}")
-            return json.dumps(
-                {"message": "Error occurred while adding to cart.", "success": False}
-            )
-
     def _extract_product_names_from_text(self, text: str) -> list:
         """Extract product names from the message text by matching against all product names in the database."""
         product_names = []
@@ -307,8 +218,97 @@ class ChatService:
                 product_names.append(product.name)
         return product_names
 
+    def _is_add_to_cart_request(self, text: str) -> bool:
+        lowered = (text or "").lower()
+        add_keywords = [
+            "add to cart",
+            "add this",
+            "add",
+            "ajoute",
+            "ajouter",
+            "ajout",
+            "panier",
+            "mettre au panier",
+        ]
+        return any(keyword in lowered for keyword in add_keywords)
+
+    def _extract_quantity(self, text: str) -> int:
+        match = re.search(r"\b(\d{1,2})\b", text or "")
+        if not match:
+            return 1
+        quantity = int(match.group(1))
+        return max(1, min(quantity, 20))
+
+    def _find_product_for_cart_action(self, user_message: str) -> Optional[Product]:
+        lowered = (user_message or "").lower()
+
+        products = Product.query.filter_by(is_active=True).all()
+        products_sorted = sorted(products, key=lambda p: len(p.name), reverse=True)
+        for product in products_sorted:
+            if product.name.lower() in lowered:
+                return product
+
+        # Fallback to semantic match when product name is approximate.
+        similar_products = self.vector_service.search_similar_products(user_message, top_k=1)
+        if not similar_products:
+            return None
+
+        return Product.query.get(similar_products[0]["id"])
+
+    def _handle_cart_action(
+        self,
+        user_message: str,
+        session_id: str,
+        user_id: Optional[str],
+        cart_session_id: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        if not self._is_add_to_cart_request(user_message):
+            return None
+
+        product = self._find_product_for_cart_action(user_message)
+        if not product:
+            return {
+                "message": "I could not identify which product to add. Please use the Add to Cart button on a product card or provide the exact product name.",
+                "product_ids": [],
+                "metadata": {
+                    "source": "cart_action",
+                    "confidence": 1.0,
+                    "matched_category": "cart",
+                    "matched_intent": "add_to_cart",
+                    "required_data": ["exact_product_name"],
+                },
+            }
+
+        quantity = self._extract_quantity(user_message)
+        cart = CartService.get_or_create_cart(
+            user_id=user_id,
+            session_id=cart_session_id or session_id,
+        )
+        CartService.add_item(
+            cart_id=cart.id,
+            product_id=product.id,
+            quantity=quantity,
+            unit_price=product.price,
+        )
+
+        return {
+            "message": f"Added {quantity} x {product.name} to your cart.",
+            "product_ids": [product.id],
+            "metadata": {
+                "source": "cart_action",
+                "confidence": 1.0,
+                "matched_category": "cart",
+                "matched_intent": "add_to_cart",
+                "required_data": [],
+            },
+        }
+
     def process_message(
-        self, session_id: str, user_message: str, user_id: str = None
+        self,
+        session_id: str,
+        user_message: str,
+        user_id: str = None,
+        cart_session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Process user message and generate AI response"""
         if not self.initialized:
@@ -342,72 +342,127 @@ class ChatService:
                     elif isinstance(msg, str):
                         chat_history.append(msg)
 
-            tools = self.create_tools()
-            agent = initialize_agent(
-                tools=tools,
-                llm=self.llm,
-                agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
-                memory=memory,
-                verbose=True,
-                handle_parsing_errors=True,
+            support_context = self.support_agent_service.get_support_context(
+                user_message, top_k=3
+            )
+            detected_order_number = self.support_agent_service.extract_order_number(
+                user_message
             )
 
             system_prompt = """You are Storey, an AI shopping assistant for an electronics e-commerce store.
-            You help customers find the perfect tech products based on their needs and preferences.   
+            You help customers with customer support and product assistance in a professional and friendly tone.
 
-            Guidelines:            
-            - Be helpful, friendly, and knowledgeable about technology products
-            - Use the available tools to search for products, get details, and make recommendations
-            - Always provide specific product suggestions when possible
-            - Include prices, ratings, and key features in your responses
-            - Ask clarifying questions if the user's request is unclear
-            - Focus on electronics categories: smartphones, laptops, headphones, gaming equipment, smart home devices
-            - When a user wants to add a product to cart, use the add_to_cart tool with the product name or ID
-            - If the user says "add this to cart" or similar, use the product name from your most recent message
+            Guidelines:
+            - Prioritize support topics in this order: order tracking, delivery, payment, returns.
+            - Keep responses concise, actionable, and customer-service oriented.
+            - If data is missing, clearly ask for required fields (order number, email, shipping info, etc.).
+            - Never invent policy, order status, or billing outcomes.
+            - For out-of-domain topics, politely redirect to e-commerce support scope.
+            - For product help, provide specific and practical recommendations.
+            - When customer wants to place an order, guide them: ask for email, confirm product IDs and quantities, then confirm with the order endpoint.
+            - Never claim that an item was added to cart unless the backend actually performed the add action.
+            - If you are not sure a cart action happened, ask the user to use the Add to Cart button.
 
             Available tools:
             - search_products: Find products using semantic search. Input: search query (str).
             - filter_products: Filter products. Input: JSON string with keys: category, subcategory, brand, min_price, max_price, min_rating, in_stock_only, features (list), search_query, limit.
             - get_product_details: Get product details. Input: product ID (str).
             - get_recommendations: Get recommendations. Input: product ID (str) or preference description (str).
-            - add_to_cart: Add a product to the user's cart. Input: JSON string with keys: product_id (str or product name), quantity (int, optional, default 1).
             """
 
-            agent_input = {"input": f"{system_prompt}\n\nUser: {user_message}"}
-            result = agent(agent_input)
-            ai_response = (
-                result["output"]
-                if isinstance(result, dict) and "output" in result
-                else result
+            if support_context:
+                system_prompt += (
+                    "\n\nCustomer support playbook context (prioritize this when relevant):\n"
+                    + support_context
+                )
+
+            # Initialize metadata tracking
+            response_metadata = {
+                "source": "llm",  # llm, order_tracking, or direct_support
+                "confidence": 0.0,
+                "matched_category": None,
+                "matched_intent": None,
+                "required_data": [],
+            }
+
+            direct_support_result = self.support_agent_service.get_direct_support_answer_with_metadata(
+                user_message
+            )
+            direct_support_answer = direct_support_result.get("answer")
+            support_meets_threshold = direct_support_result.get("meets_threshold", False)
+            allow_llm_for_support = current_app.config.get(
+                "ALLOW_LLM_FOR_SUPPORT_QUERIES", True
             )
 
-            product_ids = []
-            if isinstance(result, dict) and "intermediate_steps" in result:
-                for step in result["intermediate_steps"]:
-                    tool_name = (
-                        getattr(step[0], "tool", None)
-                        if hasattr(step[0], "tool")
-                        else None
-                    )
-                    tool_output = step[1]
-                    if tool_name in ["search_products", "filter_products"]:
-                        try:
-                            parsed = json.loads(tool_output)
-                            ids = parsed.get("product_ids", [])
-                            if ids:
-                                product_ids.extend(ids)
-                        except Exception:
-                            pass
-            product_ids = list(dict.fromkeys(product_ids))
+            direct_order_answer = None
+            if detected_order_number:
+                direct_order_answer = self.support_agent_service.build_order_tracking_answer(
+                    detected_order_number
+                )
 
-            message_text = ai_response
-            if not product_ids:
-                try:
-                    parsed = json.loads(ai_response)
-                    message_text = parsed.get("message", ai_response)
-                    product_ids = parsed.get("product_ids", [])
-                except Exception:
-                    pass
+            cart_action = self._handle_cart_action(
+                user_message=user_message,
+                session_id=session_id,
+                user_id=user_id,
+                cart_session_id=cart_session_id,
+            )
+
+            if cart_action:
+                message_text = cart_action["message"]
+                product_ids = cart_action["product_ids"]
+                response_metadata = cart_action["metadata"]
+            elif direct_order_answer:
+                message_text = direct_order_answer
+                product_ids = []
+                response_metadata["source"] = "order_tracking"
+                response_metadata["confidence"] = 1.0
+                response_metadata["matched_category"] = "Commandes et suivi"
+            elif direct_support_answer and support_meets_threshold:
+                # Non-hallucination policy: only use KB answer if meets threshold
+                message_text = direct_support_answer
+                product_ids = []
+                response_metadata["source"] = direct_support_result.get("source", "direct_support")
+                response_metadata["confidence"] = direct_support_result.get("confidence", 0.0)
+                response_metadata["matched_category"] = direct_support_result.get("category")
+                response_metadata["matched_intent"] = direct_support_result.get("intent")
+                response_metadata["required_data"] = direct_support_result.get("required_data", [])
+            else:
+                response_metadata["matched_category"] = direct_support_result.get("category")
+                response_metadata["matched_intent"] = direct_support_result.get("intent")
+                response_metadata["required_data"] = direct_support_result.get("required_data", [])
+
+                if not allow_llm_for_support and direct_support_result.get("category"):
+                    needed = direct_support_result.get("required_data", [])
+                    needed_text = (
+                        ", ".join(needed) if needed else "les informations de votre dossier"
+                    )
+                    message_text = (
+                        "Je ne peux pas fournir de reponse non verifiee sur ce sujet pour le moment. "
+                        f"Merci de partager {needed_text} afin que je vous aide correctement."
+                    )
+                    product_ids = []
+                    response_metadata["source"] = "guardrail"
+                    response_metadata["confidence"] = direct_support_result.get("confidence", 0.0)
+                else:
+                # KB answer below threshold or not matched - use LLM with support context
+                    messages = [SystemMessage(content=system_prompt)]
+                    if chat_history:
+                        messages.append(SystemMessage(content="Conversation history:\n" + "\n".join(chat_history)))
+                    messages.append(HumanMessage(content=user_message))
+
+                    ai_message = self.llm.invoke(messages)
+                    message_text = getattr(ai_message, "content", str(ai_message))
+                    product_ids = self._extract_product_ids_from_response(message_text)
+                    response_metadata["source"] = "llm"
+                    response_metadata["confidence"] = 0.0  # LLM responses have no explicit score
+
+            if direct_support_result.get("matched_question"):
+                response_metadata["matched_question"] = direct_support_result.get(
+                    "matched_question"
+                )
+
+            memory.buffer.append(HumanMessage(content=user_message))
+            memory.buffer.append(AIMessage(content=message_text))
 
             if not product_ids:
                 product_names = self._extract_product_names_from_text(message_text)
@@ -445,6 +500,7 @@ class ChatService:
                 "timestamp": ai_msg.created_at.isoformat(),
                 "products": products,
                 "type": ai_msg.message_type,
+                "metadata": response_metadata,
             }
 
         except Exception as e:

@@ -1,14 +1,13 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
-import { useAuth } from "@/context/AuthContext";
-import api from "@/lib/api";
+import { addItemsToCart } from "@/lib/cart";
 import { formatPrice } from "@/lib/utils";
 import { Product } from "@/types";
-import { Heart, Share2, ShoppingCart, Star } from "lucide-react";
+import { Share2, Star, ShoppingCart } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 interface ProductCardProps {
@@ -17,10 +16,8 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, size = "default" }: ProductCardProps) {
-  const { user } = useAuth();
   const [imageError, setImageError] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
-  const [likesCount, setLikesCount] = useState(0);
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
 
   // Add safety checks for product data
   if (!product || !product.id) {
@@ -32,63 +29,6 @@ export function ProductCard({ product, size = "default" }: ProductCardProps) {
   }
 
   const isCompact = size === "compact";
-
-  useEffect(() => {
-    if (user && product.id) {
-      checkLikeStatus();
-    }
-    fetchLikesCount();
-  }, [user, product.id]);
-
-  const checkLikeStatus = async () => {
-    if (!user) return;
-
-    try {
-      const response = await api.post("/likes/check", {
-        product_id: product.id,
-      });
-      if (response.data.success) {
-        setIsLiked(response.data.is_liked);
-      }
-    } catch (error) {
-      // Silently handle error - likes are not critical
-    }
-  };
-
-  const fetchLikesCount = async () => {
-    try {
-      const response = await api.get(`/likes/product/${product.id}`);
-      if (response.data.success) {
-        setLikesCount(response.data.likes_count);
-      }
-    } catch (error) {
-      // Silently handle error
-    }
-  };
-
-  const handleLike = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!user) {
-      toast.error("Please login to like products");
-      return;
-    }
-
-    try {
-      const response = await api.post("/likes/toggle", {
-        product_id: product.id,
-      });
-
-      if (response.data.success) {
-        setIsLiked(response.data.is_liked);
-        setLikesCount((prev) => (response.data.is_liked ? prev + 1 : prev - 1));
-        toast(response.data.message);
-      }
-    } catch (error) {
-      toast.error("Failed to update like status");
-    }
-  };
 
   const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -123,20 +63,20 @@ export function ProductCard({ product, size = "default" }: ProductCardProps) {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!user) {
-      toast.error("Please login to add items to cart");
+    if (!product.id || !product.price) {
+      toast.error("Product information incomplete");
       return;
     }
 
+    setIsAddingToCart(true);
     try {
-      await api.post("/cart/add", {
-        user_id: user.id,
-        product_id: product.id,
-        quantity: 1,
-      });
-      toast("Added to cart!");
+      await addItemsToCart([{ productId: product.id, unitPrice: product.price, quantity: 1 }]);
+      toast.success(`${product.name} added to cart!`);
     } catch (error) {
       toast.error("Failed to add to cart");
+      console.error("Cart error:", error);
+    } finally {
+      setIsAddingToCart(false);
     }
   };
 
@@ -236,37 +176,16 @@ export function ProductCard({ product, size = "default" }: ProductCardProps) {
         </CardContent>
 
         <CardFooter className={`pt-0 ${isCompact ? "p-3" : "p-4"}`}>
-          <div className="flex space-x-2 w-full">
-            <Button
-              className={`flex-1 ${isCompact ? "h-8 text-xs" : ""}`}
-              onClick={handleAddToCart}
-              disabled={product.inStock === false}
-            >
-              {!isCompact && (
-                <ShoppingCart
-                  className={`mr-2 ${isCompact ? "h-3 w-3" : "h-4 w-4"}`}
-                />
-              )}
-
-              {product.inStock !== false ? "Add to Cart" : "Out of Stock"}
-            </Button>
-
+          <div className="flex space-x-2 w-full justify-end gap-2">
             <Button
               size={isCompact ? "sm" : "default"}
-              variant="outline"
-              onClick={handleLike}
-              className={`px-3 ${isLiked ? "text-red-500 border-red-200" : ""}`}
+              onClick={handleAddToCart}
+              disabled={isAddingToCart || product.inStock === false}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-3"
             >
-              <Heart
-                className={`${isCompact ? "h-3 w-3" : "h-4 w-4"} ${
-                  isLiked ? "fill-red-500" : ""
-                }`}
-              />
-              {!isCompact && likesCount > 0 && (
-                <span className="ml-1 text-xs">{likesCount}</span>
-              )}
+              <ShoppingCart className={`${isCompact ? "h-3 w-3" : "h-4 w-4"} mr-1`} />
+              {isAddingToCart ? "Adding..." : "Add to Cart"}
             </Button>
-
             <Button
               size={isCompact ? "sm" : "default"}
               variant="outline"

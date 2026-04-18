@@ -46,6 +46,14 @@ export interface ChatMessage {
   extraData?: any;
   timestamp: string;
   productDetails?: Product[];
+  metadata?: {
+    source: "llm" | "direct_support" | "order_tracking" | "guardrail";
+    confidence: number;
+    matched_category?: string;
+    matched_intent?: string;
+    required_data?: string[];
+    matched_question?: string;
+  };
 }
 
 export interface ChatSession {
@@ -106,4 +114,44 @@ export interface ProductStats {
   };
   average_rating: number;
   in_stock_count: number;
+}
+
+export interface OrderTimelineEvent {
+  status: string;
+  note: string;
+  at: string;
+}
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  productName: string;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string;
+  userId?: string | null;
+  customerEmail: string;
+  status: string;
+  shippingMethod: string;
+  carrier?: string | null;
+  trackingNumber?: string | null;
+  shippingAddress: string;
+  estimatedDeliveryAt?: string | null;
+  shippedAt?: string | null;
+  deliveredAt?: string | null;
+  canceledAt?: string | null;
+  cancelReason?: string | null;
+  subtotal: number;
+  shippingFee: number;
+  totalAmount: number;
+  timeline: OrderTimelineEvent[];
+  createdAt: string;
+  updatedAt: string;
+  items?: OrderItem[];
 }

@@ -2,11 +2,13 @@
 
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatMessage } from "@/components/chat/ChatMessage";
+import { CartSummary } from "@/components/cart/CartSummary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
+import { getCartSessionId } from "@/lib/cart";
 import { generateSessionId } from "@/lib/utils";
 import { ChatSession, ChatMessage as Message } from "@/types";
 import { Bot, Plus, Trash2 } from "lucide-react";
@@ -50,10 +52,14 @@ export default function ChatPage() {
   }, [user]);
 
   useEffect(() => {
-    if (currentSessionId && user) {
+    const hasPersistedSession = sessions.some(
+      (session) => session.id === currentSessionId,
+    );
+
+    if (currentSessionId && user && hasPersistedSession) {
       fetchChatHistory();
     }
-  }, [currentSessionId, user]);
+  }, [currentSessionId, sessions, user]);
 
   useEffect(() => {
     scrollToBottom();
@@ -123,7 +129,6 @@ export default function ChatPage() {
         setMessages([]);
       }
     } catch (error) {
-      console.error("Failed to fetch chat history:", error);
       // If session doesn't exist yet (404), create a welcome message
       // This happens when a session is created locally but not yet persisted to DB
       if ((error as any).response?.status === 404) {
@@ -141,6 +146,7 @@ export default function ChatPage() {
           },
         ]);
       } else {
+        console.error("Failed to fetch chat history:", error);
         // For other errors, set empty array to prevent crashes
         setMessages([]);
       }
@@ -163,9 +169,6 @@ export default function ChatPage() {
         timestamp: new Date().toISOString(),
       },
     ]);
-    if (user) {
-      fetchSessions();
-    }
   };
 
   const deleteSession = async (sessionId: string) => {
@@ -207,6 +210,7 @@ export default function ChatPage() {
       const response = await api.post("/chat/message", {
         message: content,
         session_id: currentSessionId,
+        cart_session_id: getCartSessionId(),
       });
 
       if (response.data.success) {
@@ -214,6 +218,8 @@ export default function ChatPage() {
         if (user) {
           fetchSessions(); // Refresh sessions to update message count
         }
+      } else {
+        toast.error(response.data.message || "Failed to send message");
       }
     } catch (error) {
       toast.error("Failed to send message");
@@ -354,16 +360,19 @@ export default function ChatPage() {
       <div className="container py-4 flex-1 flex flex-col min-h-0">
         <Card className="flex-1 flex flex-col">
           <CardHeader className="pb-3 flex-shrink-0">
-            <CardTitle className="flex items-center gap-2">
-              <div className="flex items-center space-x-1">
-                <span className="font-bold text-xl">Storey</span>
-                <Bot className="h-5 w-5" />
+            <CardTitle className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center space-x-1">
+                  <span className="font-bold text-xl">Storey</span>
+                  <Bot className="h-5 w-5" />
+                </div>
+                {user && (
+                  <span className="text-xs border-2 border-dashed border-blue-200/30 px-2 py-1 rounded-full">
+                    Hover left edge for sessions
+                  </span>
+                )}
               </div>
-              {user && (
-                <span className="text-xs border-2 border-dashed border-blue-200/30 px-2 py-1 rounded-full ml-auto">
-                  Hover left edge for sessions
-                </span>
-              )}
+              <CartSummary />
             </CardTitle>
           </CardHeader>
 

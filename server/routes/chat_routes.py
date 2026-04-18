@@ -24,6 +24,7 @@ def send_message():
 
         user_message = data["message"]
         session_id = data.get("session_id", str(uuid.uuid4()))
+        cart_session_id = data.get("cart_session_id")
 
         user_id = None
         try:
@@ -32,7 +33,12 @@ def send_message():
         except:
             pass
 
-        response = chat_service.process_message(session_id, user_message, user_id)
+        response = chat_service.process_message(
+            session_id,
+            user_message,
+            user_id,
+            cart_session_id,
+        )
 
         return jsonify(
             {"success": True, "response": response, "session_id": session_id}

@@ -18,7 +18,8 @@ class Config:
     )
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
 
-    GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+    GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
     PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
     PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
@@ -28,6 +29,13 @@ class Config:
 
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     EMBEDDING_DIMENSION = 384
+
+    # Non-Hallucination Policy Configuration
+    # Minimum confidence score required to return KB-backed answer (0-10, token overlap)
+    KB_CONFIDENCE_THRESHOLD = int(os.environ.get("KB_CONFIDENCE_THRESHOLD", "2"))
+    # When False, always use LLM for non-KB support queries (safer)
+    # When True, allow LLM with support context injected (more flexible)
+    ALLOW_LLM_FOR_SUPPORT_QUERIES = os.environ.get("ALLOW_LLM_FOR_SUPPORT_QUERIES", "true").lower() == "true"
 
 
 class DevelopmentConfig(Config):

@@ -14,8 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   LogOut,
   MessageCircle,
-  Settings,
-  ShoppingCart,
+  PackageSearch,
   User,
 } from "lucide-react";
 import Link from "next/link";
@@ -49,21 +48,27 @@ export function Header() {
             >
               AI Assistant
             </Link>
+            <Link
+              href="/orders"
+              className="text-sm font-medium hover:text-primary transition-colors"
+            >
+              Track Order
+            </Link>
           </nav>
         </div>
 
         <div className="flex items-center space-x-4">
           {user ? (
             <>
-              <Button variant="ghost" size="icon" asChild>
-                <Link href="/cart">
-                  <ShoppingCart className="h-5 w-5" />
-                </Link>
-              </Button>
-
               <Button variant="ghost" size="icon" asChild className="md:hidden">
                 <Link href="/chat">
                   <MessageCircle className="h-5 w-5" />
+                </Link>
+              </Button>
+
+              <Button variant="ghost" size="icon" asChild>
+                <Link href="/orders">
+                  <PackageSearch className="h-5 w-5" />
                 </Link>
               </Button>
 
@@ -96,12 +101,6 @@ export function Header() {
                     <Link href="/profile">
                       <User className="mr-2 h-4 w-4" />
                       <span>Profile</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/profile/preferences">
-                      <Settings className="mr-2 h-4 w-4" />
-                      <span>Preferences</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />

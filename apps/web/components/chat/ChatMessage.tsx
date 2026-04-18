@@ -1,11 +1,14 @@
 import { ProductCard } from "@/components/products/ProductCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { formatDate } from "@/lib/utils";
 import { ChatMessage as Message } from "@/types";
 import { Bot, User } from "lucide-react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -18,6 +21,41 @@ export function ChatMessage({ message }: ChatMessageProps) {
   if (!message) {
     return null;
   }
+
+  const orderNumbers = Array.from(
+    new Set((message.content || "").match(/ORD-\d{8}/g) || []),
+  );
+
+  // Metadata display helper
+  const getSourceLabel = (source: string) => {
+    switch (source) {
+      case "order_tracking":
+        return "Order Tracking";
+      case "direct_support":
+        return "Direct Support";
+      case "guardrail":
+        return "Scope Guardrail";
+      case "llm":
+        return "AI Assistant";
+      default:
+        return "Response";
+    }
+  };
+
+  const getSourceColor = (source: string) => {
+    switch (source) {
+      case "order_tracking":
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+      case "direct_support":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+      case "guardrail":
+        return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
+      case "llm":
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
 
   return (
     <div
@@ -101,6 +139,39 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </CardContent>
         </Card>
 
+        {/* Confidence Metadata Display */}
+        {message.isBot && message.metadata && (
+          <div className="flex flex-wrap items-center gap-2 max-w-[80%]">
+            <Badge className={`${getSourceColor(message.metadata.source)} border-0`}>
+              {getSourceLabel(message.metadata.source)}
+            </Badge>
+
+            {message.metadata.confidence > 0 && (
+              <Badge variant="outline" className="text-xs">
+                {(message.metadata.confidence * 100).toFixed(0)}% match
+              </Badge>
+            )}
+
+            {message.metadata.matched_category && (
+              <Badge variant="outline" className="text-xs">
+                📁 {message.metadata.matched_category}
+              </Badge>
+            )}
+
+            {message.metadata.matched_intent && (
+              <Badge variant="outline" className="text-xs">
+                🎯 {message.metadata.matched_intent}
+              </Badge>
+            )}
+
+            {message.metadata.matched_question && (
+              <Badge variant="outline" className="text-xs max-w-full truncate">
+                🧾 {message.metadata.matched_question}
+              </Badge>
+            )}
+          </div>
+        )}
+
         {message.products &&
           Array.isArray(message.products) &&
           message.products.length > 0 && (
@@ -131,6 +202,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
               </ScrollArea>
             </div>
           )}
+
+        {message.isBot && orderNumbers.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {orderNumbers.map((orderNumber) => (
+              <Button key={orderNumber} size="sm" variant="outline" asChild>
+                <Link href={`/orders?orderNumber=${encodeURIComponent(orderNumber)}`}>
+                  Track {orderNumber}
+                </Link>
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

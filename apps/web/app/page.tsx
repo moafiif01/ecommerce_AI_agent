@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { PixelAnimation } from "@/components/ui/PixelAnimation";
 import api from "@/lib/api";
 import { Product } from "@/types";
-import { ArrowRight, Bot, ShoppingBag } from "lucide-react";
+import { ArrowRight, Bot, PackageSearch, ShoppingBag } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -26,7 +26,8 @@ export default function HomePage() {
         setFeaturedProducts(response.data.products);
       }
     } catch (error) {
-      console.error("Failed to fetch featured products:", error);
+      // Backend may be temporarily unavailable; keep page usable with empty featured list.
+      setFeaturedProducts([]);
     } finally {
       setLoading(false);
     }
@@ -58,6 +59,12 @@ export default function HomePage() {
               <Link href="/chat">
                 <Bot className="mr-2 h-5 w-5" />
                 Try AI Assistant
+              </Link>
+            </Button>
+            <Button size="lg" variant="secondary" asChild>
+              <Link href="/orders">
+                <PackageSearch className="mr-2 h-5 w-5" />
+                Track Order
               </Link>
             </Button>
           </div>

@@ -4,11 +4,9 @@ flask-jwt-extended
 flask-cors
 flask-migrate
 python-dotenv
-pinecone-client
+pinecone
 langchain
-langchain-google-genai
-langchain-pinecone
-# google-genai
+langchain-groq
 werkzeug
 sentence-transformers
 psycopg2-binary

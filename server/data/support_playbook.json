@@ -1,0 +1,152 @@
+{
+  "categories": [
+    {
+      "id": "orders_tracking",
+      "title": "Commandes et suivi",
+      "simple": [
+        {
+          "question": "Quand vais-je recevoir ma commande ?",
+          "intention": "date de livraison estimee",
+          "required_data": ["adresse", "mode_expedition", "delai_moyen"],
+          "recommended_answer": "Je peux estimer la date de livraison selon votre mode d'expedition et votre zone. Donnez le numero de commande et votre code postal."
+        },
+        {
+          "question": "Puis-je modifier ma commande apres validation ?",
+          "intention": "modification post-achat",
+          "required_data": ["statut_preparation", "fenetre_modification"],
+          "recommended_answer": "Cela depend de l'etat de preparation. Si la commande n'est pas encore expediee, une modification peut etre possible."
+        },
+        {
+          "question": "Comment annuler ma commande ?",
+          "intention": "annulation",
+          "required_data": ["delai_annulation", "procedure", "remboursement"],
+          "recommended_answer": "Je peux lancer la procedure d'annulation si la commande n'est pas expediee. Sinon, je vous guiderai vers un retour/remboursement."
+        }
+      ],
+      "complex": [
+        {
+          "question": "J'ai commande 3 articles mais je n'en ai recu que 2",
+          "challenge": "commande partiellement livree",
+          "expected": "verifier chaque ligne, expliquer les expeditions fractionnees, proposer suivi ou remboursement"
+        },
+        {
+          "question": "Ma commande est marquee livree mais je ne l'ai pas recue",
+          "challenge": "litige logistique",
+          "expected": "ouvrir enquete transporteur, verifier adresse, proposer geste commercial si necessaire"
+        },
+        {
+          "question": "Puis-je ajouter un article a une commande deja passee ?",
+          "challenge": "fusion de commandes",
+          "expected": "expliquer les limites techniques et proposer une nouvelle commande"
+        }
+      ]
+    },
+    {
+      "id": "shipping_delivery",
+      "title": "Livraison et expedition",
+      "simple": [
+        {
+          "question": "Livrez-vous en Corse ou DOM-TOM ?",
+          "intention": "couverture geographique",
+          "required_data": ["zones_desservies", "surcouts"],
+          "recommended_answer": "Oui selon les zones couvertes. Je peux confirmer l'eligibilite et les frais associes selon votre adresse."
+        },
+        {
+          "question": "Combien coutent les frais de port ?",
+          "intention": "tarification livraison",
+          "required_data": ["panier", "zone", "poids"],
+          "recommended_answer": "Les frais de port varient selon votre panier, votre zone et le poids total."
+        },
+        {
+          "question": "Proposez-vous la livraison en point relais ?",
+          "intention": "mode de livraison",
+          "required_data": ["reseau_partenaire", "localisation_client"],
+          "recommended_answer": "Oui, la livraison en point relais est disponible selon votre zone."
+        }
+      ],
+      "complex": [
+        {
+          "question": "Je serai absent le jour de la livraison, que faire ?",
+          "challenge": "imprevu client",
+          "expected": "proposer report, point relais ou autorisation de depot"
+        },
+        {
+          "question": "Mon colis a ete livre chez un voisin, comment le recuperer ?",
+          "challenge": "litige de livraison",
+          "expected": "fournir les coordonnees du voisin si autorise, sinon ouvrir un ticket transporteur"
+        },
+        {
+          "question": "La livraison est en retard par rapport a la date promise",
+          "challenge": "insatisfaction",
+          "expected": "presenter les causes possibles, proposer suivi prioritaire ou compensation"
+        }
+      ]
+    },
+    {
+      "id": "payment_billing",
+      "title": "Paiement et facturation",
+      "simple": [
+        {
+          "question": "Quels moyens de paiement acceptez-vous ?",
+          "intention": "information paiement",
+          "required_data": ["liste_moyens"],
+          "recommended_answer": "Nous acceptons carte bancaire, wallet (ex: PayPal) et autres moyens selon votre region."
+        },
+        {
+          "question": "Puis-je payer en plusieurs fois ?",
+          "intention": "paiement fractionne",
+          "required_data": ["eligibilite_client", "partenaires"],
+          "recommended_answer": "Le paiement en plusieurs fois depend du montant et de votre eligibilite."
+        }
+      ],
+      "complex": [
+        {
+          "question": "J'ai ete debite deux fois pour la meme commande",
+          "challenge": "double prelevement",
+          "expected": "verifier la transaction, initier remboursement si confirme"
+        },
+        {
+          "question": "Je veux utiliser un code promo mais il ne fonctionne pas",
+          "challenge": "gestion promotion",
+          "expected": "verifier validite, conditions d'eligibilite et proposer alternative"
+        },
+        {
+          "question": "Puis-je changer mon moyen de paiement apres validation ?",
+          "challenge": "modification post-paiement",
+          "expected": "expliquer contraintes de securite et proposer annulation + nouvelle commande"
+        }
+      ]
+    },
+    {
+      "id": "returns_refunds",
+      "title": "Retours, echanges et remboursements",
+      "simple": [
+        {
+          "question": "Sous quel delai puis-je retourner un produit ?",
+          "intention": "conditions de retour",
+          "required_data": ["delai_legal", "etat_requis"],
+          "recommended_answer": "Le delai de retour depend de la politique commerciale et de l'etat du produit."
+        },
+        {
+          "question": "Qui paie les frais de retour ?",
+          "intention": "prise en charge logistique",
+          "required_data": ["motif_retour", "politique"],
+          "recommended_answer": "La prise en charge depend du motif: produit defectueux, erreur de preparation ou convenance."
+        },
+        {
+          "question": "Quand serai-je rembourse ?",
+          "intention": "delai remboursement",
+          "required_data": ["mode_paiement", "validation_retour"],
+          "recommended_answer": "Le remboursement est lance apres validation du retour, puis selon le delai bancaire de votre moyen de paiement."
+        }
+      ],
+      "complex": [
+        {
+          "question": "Puis-je echanger un article contre une autre taille ?",
+          "challenge": "echange produit",
+          "expected": "verifier stock, expliquer procedure d'echange vs retour + nouvelle commande"
+        }
+      ]
+    }
+  ]
+}

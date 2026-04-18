@@ -1,13 +1,13 @@
 # E-commerce + AI Chatbot Backend API
 
-AI chatbot with vector search capabilities, LangChain integration, and Google Gemini support. Provides advanced product search, recommendations, and order management, cart management.
+AI chatbot with vector search capabilities, LangChain integration, and Groq support. Provides advanced product search, recommendations, and order management, cart management.
 
 ## Features
 
 ### **Assistant for Order Management and Advanced Search**
 
 - Advanced product searches, comparisons, cart operations, and recommendations based on user intent
-- Powered by Google Gemini Flash 2.0 for deep, contextual conversations
+- Powered by Groq-hosted LLMs for deep, contextual conversations
 - Maintains conversation history and user preferences across multiple interactions
 
 ### **Advanced Vector Search**
@@ -29,7 +29,7 @@ Prerequisites
 
 - Python 3.12+
 - Pinecone account and API key
-- Google AI Studio API key
+- Groq API key
 
 Environment Setup
 
@@ -39,7 +39,8 @@ source venv/bin/activate
 uv sync
 
 cp .env.example .env
-GOOGLE_API_KEY=your-google-api-key-here
+GROQ_API_KEY=your-groq-api-key-here
+GROQ_MODEL=llama-3.1-8b-instant
 PINECONE_API_KEY=your-pinecone-api-key-here
 PINECONE_INDEX_NAME=ecommerce-products
 JWT_SECRET_KEY=your-jwt-secret-key-here
@@ -59,6 +60,12 @@ python -m scripts.index_all_products
 ```bash
 flask run --debug
 flask run
+```
+
+### Run Integration Tests
+
+```bash
+py -3.12 -m unittest discover -s tests -v
 ```
 
 ## API Endpoints
@@ -109,6 +116,14 @@ flask run
 - `DELETE /api/chat/sessions/<id>` - Delete chat session
 - `POST /api/chat/sessions/<id>/clear` - Clear chat history
 - `GET /api/chat/health` - Check chat service health
+
+### Orders & Tracking
+
+- `POST /api/orders/` - Create order
+- `GET /api/orders/` - List orders (optional email filter)
+- `GET /api/orders/track?order_number=...&email=...` - Track order by order number
+- `GET /api/orders/<id>` - Get order details by id
+- `POST /api/orders/<id>/cancel` - Cancel order when eligible
 
 ### System
 
@@ -174,7 +189,7 @@ flask run
 ### ChatService
 
 - **LangChain Orchestration**: Advanced conversation flow management with memory
-- **Google Gemini Integration**: State-of-the-art AI model with 1M token context
+- **Groq Integration**: Fast inference with state-of-the-art open models
 - **Intelligent Tool Calling**: Dynamic product search, filtering, and recommendations
 - **Session Management**: Persistent conversation history and context preservation
 - **Multi-Modal Support**: Text processing with context-aware responses
@@ -276,7 +291,7 @@ results = vector_service.search_similar_products(
    - Check network connectivity
    - Ensure index exists
 
-2. **Google AI API Error**
+2. **Groq API Error**
 
    - Verify API key
    - Check quota limits

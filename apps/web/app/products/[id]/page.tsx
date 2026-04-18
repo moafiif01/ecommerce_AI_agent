@@ -5,11 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
 import { formatPrice } from "@/lib/utils";
 import { Product } from "@/types";
-import { Heart, Share2, ShoppingCart, Star } from "lucide-react";
+import { Share2, Star } from "lucide-react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -17,13 +16,9 @@ import { toast } from "sonner";
 
 export default function ProductDetailPage() {
   const params = useParams();
-  const { user } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
   const [recommendations, setRecommendations] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [quantity, setQuantity] = useState(1);
-  const [isLiked, setIsLiked] = useState(false);
-  const [likesCount, setLikesCount] = useState(0);
 
   useEffect(() => {
     if (params.id) {
@@ -31,15 +26,6 @@ export default function ProductDetailPage() {
       fetchRecommendations();
     }
   }, [params.id]);
-
-  useEffect(() => {
-    if (user && product?.id) {
-      checkLikeStatus();
-    }
-    if (product?.id) {
-      fetchLikesCount();
-    }
-  }, [user, product?.id]);
 
   const fetchProduct = async () => {
     try {
@@ -67,55 +53,6 @@ export default function ProductDetailPage() {
     }
   };
 
-  const checkLikeStatus = async () => {
-    if (!user || !product?.id) return;
-
-    try {
-      const response = await api.post("/likes/check", {
-        product_id: product.id,
-      });
-      if (response.data.success) {
-        setIsLiked(response.data.is_liked);
-      }
-    } catch (error) {
-      console.error("Failed to check like status:", error);
-    }
-  };
-
-  const fetchLikesCount = async () => {
-    if (!product?.id) return;
-
-    try {
-      const response = await api.get(`/likes/product/${product.id}`);
-      if (response.data.success) {
-        setLikesCount(response.data.likes_count);
-      }
-    } catch (error) {
-      console.error("Failed to fetch likes count:", error);
-    }
-  };
-
-  const handleLike = async () => {
-    if (!user) {
-      toast.error("Please login to like products");
-      return;
-    }
-
-    try {
-      const response = await api.post("/likes/toggle", {
-        product_id: product!.id,
-      });
-
-      if (response.data.success) {
-        setIsLiked(response.data.is_liked);
-        setLikesCount((prev) => (response.data.is_liked ? prev + 1 : prev - 1));
-        toast(response.data.message);
-      }
-    } catch (error) {
-      toast.error("Failed to update like status");
-    }
-  };
-
   const handleShare = async () => {
     if (!product) return;
 
@@ -140,26 +77,6 @@ export default function ProductDetailPage() {
       } catch (clipboardError) {
         toast.error("Failed to share product");
       }
-    }
-  };
-
-  const handleAddToCart = async () => {
-    if (!user) {
-      toast.error("Please login to add items to cart");
-      return;
-    }
-
-    if (!product) return;
-
-    try {
-      await api.post("/cart/add", {
-        user_id: user.id,
-        product_id: product.id,
-        quantity,
-      });
-      toast(`Added ${quantity} ${product.name} to cart!`);
-    } catch (error) {
-      toast.error("Failed to add to cart");
     }
   };
 
@@ -276,58 +193,15 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* Add to Cart */}
+          {/* Product actions */}
           <div className="space-y-4">
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <label htmlFor="quantity" className="text-sm font-medium">
-                  Quantity:
-                </label>
-                <select
-                  id="quantity"
-                  value={quantity}
-                  onChange={(e) => setQuantity(parseInt(e.target.value))}
-                  className="border rounded px-2 py-1 bg-background"
-                  disabled={!product.inStock}
-                >
-                  {Array.from(
-                    { length: Math.min(10, product.stock) },
-                    (_, i) => (
-                      <option key={i + 1} value={i + 1}>
-                        {i + 1}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
               <span className="text-sm text-muted-foreground">
                 {product.stock} available
               </span>
             </div>
 
-            <div className="flex space-x-4">
-              <Button
-                size="lg"
-                className="flex-1"
-                onClick={handleAddToCart}
-                disabled={!product.inStock}
-              >
-                <ShoppingCart className="mr-2 h-5 w-5" />
-                {product.inStock ? "Add to Cart" : "Out of Stock"}
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={handleLike}
-                className={`px-4 ${
-                  isLiked ? "text-red-500 border-red-200" : ""
-                }`}
-              >
-                <Heart className={`h-5 w-5 ${isLiked ? "fill-red-500" : ""}`} />
-                {likesCount > 0 && (
-                  <span className="ml-2 text-sm">{likesCount}</span>
-                )}
-              </Button>
+            <div className="flex">
               <Button
                 size="lg"
                 variant="outline"
@@ -335,6 +209,7 @@ export default function ProductDetailPage() {
                 className="px-4"
               >
                 <Share2 className="h-5 w-5" />
+                <span className="ml-2">Share</span>
               </Button>
             </div>
           </div>

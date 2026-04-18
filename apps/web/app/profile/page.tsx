@@ -4,7 +4,7 @@ import { useAuth } from '@/context/AuthContext'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { User, Settings, ShoppingBag, MessageCircle } from 'lucide-react'
+import { User, Settings, MessageCircle } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 
@@ -157,13 +157,6 @@ export default function ProfilePage() {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link href="/cart">
-                  <ShoppingBag className="mr-2 h-4 w-4" />
-                  View Cart
-                </Link>
-              </Button>
-              
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/chat">
                   <MessageCircle className="mr-2 h-4 w-4" />

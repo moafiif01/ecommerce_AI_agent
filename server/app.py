@@ -81,9 +81,11 @@ def create_app(config_name=None):
             db.create_all()
 
             from utils.database_seeder import DatabaseSeeder
+            from services.order_service import OrderService
 
             seeder = DatabaseSeeder(db)
             seeder.seed_products()
+            OrderService.seed_sample_orders()
 
             app.logger.info("Database initialized successfully")
 
