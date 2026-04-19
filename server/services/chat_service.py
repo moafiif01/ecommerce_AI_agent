@@ -239,16 +239,53 @@ class ChatService:
         quantity = int(match.group(1))
         return max(1, min(quantity, 20))
 
-    def _find_product_for_cart_action(self, user_message: str) -> Optional[Product]:
+    def _find_product_for_cart_action(self, user_message: str, session_id: str) -> Optional[Product]:
         lowered = (user_message or "").lower()
 
+        # 1. Exact match
         products = Product.query.filter_by(is_active=True).all()
         products_sorted = sorted(products, key=lambda p: len(p.name), reverse=True)
         for product in products_sorted:
             if product.name.lower() in lowered:
                 return product
 
-        # Fallback to semantic match when product name is approximate.
+        # 2. Contextual match (Generalization)
+        # Check if user is referencing a recently suggested product
+        context_keywords = ["that", "this", "it", "one", "item", "product", "article", "suggested", "recommended"]
+        words = lowered.split()
+        
+        is_context_ref = any(word in words for word in context_keywords) or len(words) < 6
+        
+        if is_context_ref:
+            from models.message import Message
+            # Get the last AI message that contains product recommendations in this session
+            last_bot_msg = Message.query.filter_by(
+                chat_session_id=session_id, 
+                is_bot=True
+            ).filter(Message.products != None).filter(Message.products != '[]').order_by(Message.created_at.desc()).first()
+            
+            if last_bot_msg:
+                product_ids = last_bot_msg.get_products()
+                if product_ids:
+                    # Support for index positioning
+                    index_map = {
+                        "first": 0, "1st": 0, "premier": 0,
+                        "second": 1, "2nd": 1, "deuxieme": 1, "deuxième": 1,
+                        "third": 2, "3rd": 2, "troisieme": 2, "troisième": 2,
+                        "last": -1, "dernier": -1
+                    }
+                    
+                    selected_idx = 0  # Default to the first product
+                    for word, idx in index_map.items():
+                        if word in words:
+                            if idx == -1 or idx < len(product_ids):
+                                selected_idx = idx
+                            break
+                            
+                    target_id = product_ids[selected_idx]
+                    return Product.query.get(target_id)
+
+        # 3. Fallback to semantic match when product name is approximate.
         similar_products = self.vector_service.search_similar_products(user_message, top_k=1)
         if not similar_products:
             return None
@@ -265,7 +302,7 @@ class ChatService:
         if not self._is_add_to_cart_request(user_message):
             return None
 
-        product = self._find_product_for_cart_action(user_message)
+        product = self._find_product_for_cart_action(user_message, session_id)
         if not product:
             return {
                 "message": "I could not identify which product to add. Please use the Add to Cart button on a product card or provide the exact product name.",
