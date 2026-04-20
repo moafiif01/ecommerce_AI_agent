@@ -92,13 +92,14 @@ class VectorService:
 
             similar_products = []
             for match in results["matches"]:
-                similar_products.append(
-                    {
-                        "id": match["id"],
-                        "score": match["score"],
-                        "metadata": match.get("metadata", {}),
-                    }
-                )
+                if match["score"] >= 0.35:
+                    similar_products.append(
+                        {
+                            "id": match["id"],
+                            "score": match["score"],
+                            "metadata": match.get("metadata", {}),
+                        }
+                    )
 
             logger.info(
                 f"Found {len(similar_products)} similar products for query: {query_text}"

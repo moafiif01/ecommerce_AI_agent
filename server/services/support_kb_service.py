@@ -10,7 +10,7 @@ class SupportKBService:
 
     def __init__(self, kb_path: str | None = None):
         base_dir = Path(__file__).resolve().parent.parent
-        self.kb_path = Path(kb_path) if kb_path else base_dir / "data" / "support_playbook.json"
+        self.kb_path = Path(kb_path) if kb_path else base_dir / "knowledge_base" / "support_playbook.json"
         self._data: Dict[str, Any] | None = None
 
     def _load(self) -> Dict[str, Any]:
@@ -124,7 +124,7 @@ class SupportKBService:
             return None
 
         top = hits[0]
-        if top["score"] < 2:
+        if top["score"] < 5:
             return None
 
         guidance = top.get("recommended_answer") or top.get("expected")

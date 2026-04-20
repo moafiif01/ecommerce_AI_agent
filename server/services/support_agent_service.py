@@ -87,7 +87,7 @@ class SupportAgentService:
         
         # Get config with fallback to defaults
         confidence_threshold = getattr(
-            current_app.config, "KB_CONFIDENCE_THRESHOLD", 2
+            current_app.config, "KB_CONFIDENCE_THRESHOLD", 5
         )
         
         if not hits:

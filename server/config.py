@@ -32,10 +32,15 @@ class Config:
 
     # Non-Hallucination Policy Configuration
     # Minimum confidence score required to return KB-backed answer (0-10, token overlap)
-    KB_CONFIDENCE_THRESHOLD = int(os.environ.get("KB_CONFIDENCE_THRESHOLD", "2"))
+    KB_CONFIDENCE_THRESHOLD = int(os.environ.get("KB_CONFIDENCE_THRESHOLD", "5"))
     # When False, always use LLM for non-KB support queries (safer)
     # When True, allow LLM with support context injected (more flexible)
     ALLOW_LLM_FOR_SUPPORT_QUERIES = os.environ.get("ALLOW_LLM_FOR_SUPPORT_QUERIES", "true").lower() == "true"
+
+    # RAG Configuration
+    SUPPORT_KB_NAMESPACE = os.environ.get("SUPPORT_KB_NAMESPACE", "support-kb")
+    RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "4"))
+    RAG_SIMILARITY_THRESHOLD = float(os.environ.get("RAG_SIMILARITY_THRESHOLD", "0.3"))
 
 
 class DevelopmentConfig(Config):
