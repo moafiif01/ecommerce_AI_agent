@@ -33,34 +33,30 @@ This file now contains only the requested feature scope.
 ### Source Attribution
 - Show the cited source document/policy in responses to increase trust and reduce hallucination risk.
 
-## 3) Order And Account Management (API Integration)
+## 3) Autonomous Order Management (Tool Calling)
 
 ### Real-Time Order Tracking
-- Ask for an order ID and return live status via API.
-- Example: "Where is order #12345?"
+- The agent autonomously invokes the `track_order` tool when an intent is detected.
+- Example: "Where is order #12345?" (Agent extracts ID safely).
 
-### Modification/Cancellation Assistance
-- Provide guided flow and eligibility checks for changing or cancelling orders post-purchase.
+### Modification/Cancellation Execution
+- Uses the `cancel_order` tool to programmatically refund and cancel eligible orders without human intervention.
 
 ### Invoice Access
 - Direct users to downloadable invoice location or endpoint.
 
-## 4) Advanced Task-Oriented Capabilities
+## 4) Advanced Agentic Behaviors
 
-### Dispute And Litigative Handling
-- Dedicated flows for issues like:
-  - Item not received
-  - Damaged goods
-- Create or route support tickets when required.
+### Autonomous Product Operations
+- Agent calls `search_products`, `filter_products`, and `get_recommendations` based on conversational needs.
+- Formats and displays products dynamically with exact IDs bound to UI elements via `[RECOMMENDED_IDS]`.
 
-### Multi-Step Reasoning
-- Support tasks requiring chained logic, such as:
-  - Product comparisons
-  - Total price calculations including shipping based on destination.
+### Native Add-to-Cart Action
+- Rather than mere suggestions, the agent physically drives the ecommerce state using `add_to_cart` tool integration based on conversational intent.
 
 ### Out-of-Domain Guardrails
-- Politely decline non-ecommerce topics (for example, political or unrelated questions).
-- Keep brand-safe and professional tone.
+- System prompts block and politely decline non-ecommerce topics (e.g., political or unrelated questions).
+- Strict adherence to factual data avoiding hallucinations on inventory/price.
 
 ## 5) Technical And DevOps Features
 

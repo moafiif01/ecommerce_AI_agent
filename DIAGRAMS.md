@@ -18,7 +18,7 @@ graph TB
         CheckoutRoute["Checkout Routes<br/>POST /api/checkout/place-order"]
         OrderRoute["Order Routes<br/>GET /api/order/:number"]
         
-        ChatService["Chat Service<br/>(4-Branch Detection)"]
+        ChatService["Chat Service<br/>(LangChain Agent)"]
         CartService["Cart Service"]
         OrderService["Order Service"]
         SupportService["Support Service"]
@@ -69,103 +69,83 @@ graph TB
 
 ---
 
-## 2. Chat Service - 4-Branch Intent Detection
+## 2. Chat Service - Autonomous Agent Flow (LangChain)
 
 ```mermaid
 graph TD
     Input["User Message<br/>Received"]
     
-    Input --> B1{"Branch 1:<br/>Add-to-Cart?<br/>Pattern: add X product"}
+    Input --> Memory["Load Chat History<br/>& Retrieve RAG Context"]
+    Memory --> Guardrails{"Guardrail<br/>Check?"}
     
-    B1 -->|YES| Extract1["Extract: Quantity<br/>Product Name"]
-    Extract1 --> Search1["Find Product<br/>DB or Pinecone"]
-    Search1 --> Cart1["CartService<br/>add_item()"]
-    Cart1 --> Response1["Response:<br/>✓ Added to cart"]
+    Guardrails -->|Out of Domain| GuardResponse["Response:<br/>Polite rejection"]
+    Guardrails -->|Valid| AgentPrompt["Build System Prompt<br/>Inject Support Context"]
     
-    B1 -->|NO| B2{"Branch 2:<br/>Order Tracking?<br/>Pattern: ORD-XXXXXXXX"}
+    AgentPrompt --> LLM{"ChatGroq LLM<br/>(bind_tools)"}
     
-    B2 -->|YES| Extract2["Extract:<br/>Order Number"]
-    Extract2 --> OrderSvc["OrderService<br/>get_order()"]
-    OrderSvc --> Response2["Response:<br/>Order Status"]
+    LLM -->|Tool Call: track_order| TrackTool["track_order(ORD...)"]
+    TrackTool --> LLM
     
-    B2 -->|NO| B3{"Branch 3:<br/>Support Query?<br/>Keywords: return,<br/>shipping, payment"}
+    LLM -->|Tool Call: add_to_cart| CartTool["add_to_cart(id, qty)"]
+    CartTool --> LLM
     
-    B3 -->|YES| KB["Search Support</br/>Knowledge Base"]
-    KB --> Conf{"Confidence<br/>≥ Threshold?"}
-    Conf -->|HIGH| Response3["Response:<br/>KB Answer"]
-    Conf -->|LOW| B4
+    LLM -->|Tool Call: search/filter| SearchTool["search_products(query)"]
+    SearchTool --> LLM
     
-    B3 -->|NO| B4["Branch 4:<br/>General Chat<br/>LLM Fallback"]
+    LLM -->|Direct Answer| FinalAnswer["Generate Final text<br/>Extract [RECOMMENDED_IDS]"]
     
-    B4 --> Vector["Query Pinecone<br/>Top 5 Products"]
-    Vector --> History["Build Prompt<br/>+ Chat History"]
-    History --> LLM["Send to Groq LLM<br/>Claude 3"]
-    LLM --> Response4["Response:<br/>LLM Generated"]
-    
-    Response1 --> Metadata["Add Metadata<br/>source: cart_action"]
-    Response2 --> Metadata
-    Response3 --> Metadata
-    Response4 --> Metadata
+    FinalAnswer --> Metadata["Add Metadata<br/>source: llm, etc."]
+    GuardResponse --> Metadata
     
     Metadata --> Return["Return to Frontend"]
     
-    style B1 fill:#c8e6c9
-    style B2 fill:#bbdefb
-    style B3 fill:#ffe0b2
-    style B4 fill:#f8bbd0
-    style Return fill:#e1bee7
+    style Guardrails fill:#ffe2e2
+    style LLM fill:#e1bee7
+    style TrackTool fill:#bbdefb
+    style CartTool fill:#c8e6c9
+    style SearchTool fill:#fff9c4
+    style Return fill:#b2ebf2
 ```
 
 ---
 
-## 3. Add-to-Cart Flow (Detailed)
+## 3. Add-to-Cart Flow (Autonomous Tooling)
 
 ```mermaid
 sequenceDiagram
     actor User
     participant Frontend as Next.js<br/>Frontend
-    participant Backend as Flask<br/>Backend
+    participant Agent as LangChain<br/>Agent (LLM)
+    participant Backend as Flask<br/>Backend Tools
     participant DB as PostgreSQL
     participant Pinecone as Pinecone<br/>Vector Search
 
     User->>Frontend: "add 2 iPhone 15 Pro to cart"
-    Frontend->>Frontend: Detect chatSessionId<br/>Load cart_session_id from localStorage
-    Frontend->>Backend: POST /api/chat/message<br/>{message, session_id, cart_session_id}
+    Frontend->>Frontend: Detect chatSessionId & cart_session_id
+    Frontend->>Backend: POST /api/chat/message
     
-    Backend->>Backend: ChatService.process_message()
-    Backend->>Backend: Branch 1 Trigger:<br/>Regex matches "add X to cart"
-    Backend->>Backend: Extract: qty=2, product="iPhone 15 Pro"
+    Backend->>Agent: Invoke ChatGroq with System Prompt & Tools
+    Agent->>Agent: Analyzes intent:<br/>Needs product ID to add to cart
+    Agent-->>Backend: ToolCall: search_products("iPhone 15 Pro")
     
-    Backend->>DB: Query: Find product by name
-    DB-->>Backend: product_id = "uuid-xxx"
+    Backend->>Pinecone: Vector search: "iPhone 15 Pro"
+    Pinecone-->>Backend: Matches
+    Backend->>DB: Fetch details
+    DB-->>Backend: [ID: uuid-xxx, Stock: 15]
+    Backend-->>Agent: ToolResponse: Found product [ID: uuid-xxx]
     
-    alt Product Not Found
-        Backend->>Pinecone: Vector search: "iPhone 15 Pro"
-        Pinecone-->>Backend: Top match with confidence
-        Backend->>DB: Fetch by vector match
-        DB-->>Backend: product_id
-    end
+    Agent->>Agent: Prepares to add to cart
+    Agent-->>Backend: ToolCall: add_to_cart(product_id="uuid-xxx", qty=2)
     
-    Backend->>Backend: CartService.add_item()<br/>cart_session_id, product_id, qty=2
-    Backend->>DB: INSERT/UPDATE cart_items
-    DB-->>Backend: Mutation success
+    Backend->>DB: cart_items INSERT (cart_session_id, qty=2)
+    DB-->>Backend: Success
+    Backend-->>Agent: ToolResponse: Added successfully
     
-    Backend->>Backend: Generate response:<br/>"Added 2 × iPhone 15 Pro to cart"
-    Backend-->>Frontend: {success: true, content, metadata}
+    Agent-->>Backend: Final Answer: "J'ai ajouté 2 iPhone 15 Pro à votre panier."
+    Backend-->>Frontend: {success: true, content: "J'ai ajouté...", products: [...]}
     
-    Frontend->>Frontend: Add message to history
-    Frontend->>Frontend: Re-render chat with response
     Frontend->>Frontend: Update CartSummary badge
-    
-    User->>User: Sees "Added 2 × iPhone 15 Pro" in chat
-    User->>User: Sees cart count updated in header
-    
-    User->>Frontend: Click cart icon
-    Frontend->>Backend: GET /api/cart/abc123
-    Backend->>DB: SELECT * FROM carts/cart_items
-    DB-->>Backend: cart with 2 iPhone 15 Pro
-    Backend-->>Frontend: {items: [...], total: $3998}
-    Frontend->>Frontend: Display: 2 × iPhone 15 Pro ($3998)
+    User->>User: Sees response & cart updated
 ```
 
 ---
@@ -303,8 +283,8 @@ graph LR
     subgraph Processing["Processing"]
         Proc1["1. Validate input"]
         Proc2["2. Route to ChatService"]
-        Proc3["3. Detect intent<br/>(4-branch)"]
-        Proc4["4. Execute action"]
+        Proc3["3. Agent Tool Call<br/>(LangChain)"]
+        Proc4["4. Execute tool action"]
         Proc5["5. Query external<br/>services if needed"]
         Proc6["6. Persist to DB"]
     end
@@ -468,17 +448,17 @@ graph BT
 
 ```mermaid
 graph TD
-    Feature["Feature<br/>Add-to-Cart Intent"]
+    Feature["Feature<br/>LLM Model Selection"]
     
-    Feature --> Flag1["Flag: cart_intent_detection<br/>Default: enabled"]
+    Feature --> Flag1["Flag: groq_model<br/>Default: llama-3.1-8b"]
     
-    Flag1 -->|"User A<br/>10%"| V1["Control: No<br/>Intent Detection<br/>Fallback to LLM"]
-    Flag1 -->|"User B<br/>90%"| V2["Treatment: New<br/>Intent Detection<br/>Branch 1"]
+    Flag1 -->|"User A<br/>50%"| V1["Control:<br/>llama-3.1-8b-instant"]
+    Flag1 -->|"User B<br/>50%"| V2["Treatment:<br/>llama-3.3-70b-versatile"]
     
-    V1 --> Metric1["Metrics:<br/>- Cart adds per session<br/>- Conversion rate<br/>- Chat turns to order"]
+    V1 --> Metric1["Metrics:<br/>- Tool calling accuracy<br/>- Latency (ms)<br/>- Chat conversion rate"]
     V2 --> Metric1
     
-    Metric1 --> Decision["Compare & Decide<br/>Roll out if V2 > V1"]
+    Metric1 --> Decision["Compare & Decide<br/>Promote faster/cheaper model"]
     
     style Feature fill:#e1f5ff
     style V1 fill:#ffebee
