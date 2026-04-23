@@ -180,7 +180,16 @@ def chat_health():
         if not chat_service.initialized:
             chat_service.initialize()
 
-        vector_stats = chat_service.vector_service.get_index_stats()
+        vector_stats = {}
+        try:
+            raw_stats = chat_service.vector_service.get_index_stats()
+            if isinstance(raw_stats, dict):
+                vector_stats = raw_stats
+            elif raw_stats is not None:
+                # Fallback for SDK objects that are not directly JSON serializable
+                vector_stats = {"raw": str(raw_stats)}
+        except Exception:
+            vector_stats = {}
 
         return jsonify(
             {

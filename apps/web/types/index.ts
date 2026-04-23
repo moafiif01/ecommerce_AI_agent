@@ -47,7 +47,7 @@ export interface ChatMessage {
   timestamp: string;
   productDetails?: Product[];
   metadata?: {
-    source: "llm" | "direct_support" | "order_tracking" | "guardrail";
+    source: "llm" | "direct_support" | "order_tracking" | "guardrail" | "groq_agent";
     confidence: number;
     matched_category?: string;
     matched_intent?: string;

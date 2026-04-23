@@ -20,6 +20,8 @@ class Config:
 
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
     GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+    GROQ_TEMPERATURE = float(os.environ.get("GROQ_TEMPERATURE", "0.2"))
+    GROQ_MAX_TOKENS = int(os.environ.get("GROQ_MAX_TOKENS", "1500"))
 
     PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
     PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
@@ -29,13 +31,6 @@ class Config:
 
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     EMBEDDING_DIMENSION = 384
-
-    # Non-Hallucination Policy Configuration
-    # Minimum confidence score required to return KB-backed answer (0-10, token overlap)
-    KB_CONFIDENCE_THRESHOLD = int(os.environ.get("KB_CONFIDENCE_THRESHOLD", "5"))
-    # When False, always use LLM for non-KB support queries (safer)
-    # When True, allow LLM with support context injected (more flexible)
-    ALLOW_LLM_FOR_SUPPORT_QUERIES = os.environ.get("ALLOW_LLM_FOR_SUPPORT_QUERIES", "true").lower() == "true"
 
     # RAG Configuration
     SUPPORT_KB_NAMESPACE = os.environ.get("SUPPORT_KB_NAMESPACE", "support-kb")

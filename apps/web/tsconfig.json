@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
-    "target": "es5",
-    "lib": ["dom", "dom.iterable", "es6"],
+    "target": "es2017",
+    "lib": ["dom", "dom.iterable", "es2017"],
     "ignoreDeprecations": "5.0",
     "allowJs": true,
     "skipLibCheck": true,
@@ -19,7 +19,6 @@
         "name": "next"
       }
     ],
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
     }

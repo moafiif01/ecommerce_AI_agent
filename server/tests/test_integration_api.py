@@ -1,16 +1,16 @@
 import unittest
+import os
 
 
 class IntegrationApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from app import app
-        from routes.chat_routes import chat_service
 
         cls.client = app.test_client()
-
-        # Avoid external initialization (Groq/Pinecone) during integration tests.
-        chat_service.initialized = True
+        cls.chat_runtime_enabled = bool(
+            os.environ.get("GROQ_API_KEY") and os.environ.get("PINECONE_API_KEY")
+        )
 
     def _get_first_order(self):
         response = self.client.get("/api/orders/")
@@ -78,6 +78,9 @@ class IntegrationApiTests(unittest.TestCase):
         self.assertEqual(payload["order"]["orderNumber"], order["orderNumber"])
 
     def test_chat_order_tracking_response(self):
+        if not self.chat_runtime_enabled:
+            self.skipTest("Chat runtime disabled: missing GROQ_API_KEY or PINECONE_API_KEY")
+
         order = self._get_first_order()
         if not order:
             self.skipTest("No seeded order available")
@@ -95,8 +98,6 @@ class IntegrationApiTests(unittest.TestCase):
         self.assertTrue(payload.get("success"))
 
         content = (payload.get("response") or {}).get("content", "")
-        # Order tracking now goes through LLM tool (skipped in tests).
-        # The KB fallback returns a generic "provide your order number" response.
         self.assertTrue(
             order["orderNumber"] in content
             or "commande" in content.lower()
@@ -105,6 +106,9 @@ class IntegrationApiTests(unittest.TestCase):
         )
 
     def test_chat_support_categories_direct_answers(self):
+        if not self.chat_runtime_enabled:
+            self.skipTest("Chat runtime disabled: missing GROQ_API_KEY or PINECONE_API_KEY")
+
         scenarios = [
             (
                 "Livrez-vous en Corse ou DOM-TOM ?",

@@ -37,6 +37,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
         return "Scope Guardrail";
       case "llm":
         return "AI Assistant";
+      case "groq_agent":
+        return "Groq Agent";
       default:
         return "Response";
     }
@@ -52,6 +54,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
         return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
       case "llm":
         return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
+      case "groq_agent":
+        return "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200";
       default:
         return "bg-gray-100 text-gray-800";
     }

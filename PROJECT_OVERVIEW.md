@@ -2,7 +2,7 @@
 
 ## 📋 Project Description
 
-A full-stack ecommerce chatbot application that combines natural language processing with intelligent cart management and fully autonomous tool calling. Users can browse products, ask policy questions (FAQ/CGV), track orders, and add items to cart through conversational AI. The system adopts a strict **RAG (Retrieval-Augmented Generation)** architecture coupled with **LangChain Tool Calling** using an LLM (Groq / Llama 3) for intelligent, deterministic responses that prevent hallucinations.
+A full-stack ecommerce chatbot application that combines natural language processing with intelligent cart management and fully autonomous tool calling. Users can browse products, ask policy questions (FAQ/CGV), track orders, and add items to cart through conversational AI. The system adopts a strict **RAG (Retrieval-Augmented Generation)** architecture coupled with **LangChain Tool Calling** using an LLM (Groq / Llama 3) for intelligent, grounded responses that prevent hallucinations.
 
 **Status:** ✅ Production Ready - Core features functional and spec-validated
 
@@ -28,7 +28,7 @@ A full-stack ecommerce chatbot application that combines natural language proces
 │  │  Services                       │   │
 │  │  - CartService / OrderService   │   │
 │  │  - RAGService (Faiss/Pinecone)  │   │
-│  │  - SupportKBService             │   │
+│  │  - VectorService + Policy RAG   │   │
 │  └─────────────────────────────────┘   │
 └────┬───────────┬──────────┬──────────────┘
      │           │          │
@@ -51,16 +51,17 @@ Instead of outdated deterministic keyword branches, the system relies entirely o
 - **Support Context Overlays:** Prevents hallucination by restricting the LLM to only respond based on the retrieved factual context.
 
 ### 2. Deep Tool Integration (Function Calling)
-The LLM dynamically invokes 7 backend functions via LangChain `bind_tools`:
+The LLM dynamically invokes backend functions via LangChain `bind_tools`:
 - `track_order`: Looks up the database for live status (with auto `ORD-` prefixing tolerance).
 - `cancel_order`: Cancels active orders and computes refunds.
 - `add_to_cart`: Modifies the user's persistent database cart with explicit product IDs.
 - `search_products` & `filter_products`: Uses Vector Search to intelligently match products to user inquiries without guessing names or prices.
 - `get_product_details`: Retrieves absolute product specs, descriptions, and stock status using exact ID or name lookup.
 - `get_recommendations`: Uses Pinecone semantic similarity to fetch top 4 similar products based on a reference product or description.
+- `lookup_support_policy`: Retrieves policy-grounded support context from the RAG knowledge base (FAQ + CGV).
 
 ### 3. Anti-Hallucination Guardrails
-- **Out of Domain Protection:** A safeguard that immediately rejects prompts related to politics, religion, sports, etc., gently returning the user to the ecommerce domain.
+- **Grounded Policy Answers:** The LLM is instructed to use policy retrieval tools and refuse unsupported claims when support context is missing.
 
 ---
 

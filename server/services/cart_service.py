@@ -44,6 +44,12 @@ class CartService:
         if not product:
             raise ValueError(f"Product {product_id} not found")
 
+        if quantity <= 0:
+            raise ValueError("Quantity must be at least 1")
+
+        if product.stock <= 0:
+            raise ValueError(f"Product {product.name} is out of stock")
+
         if unit_price is None:
             unit_price = product.price
 
@@ -53,6 +59,8 @@ class CartService:
         ).first()
 
         if existing_item:
+            if existing_item.quantity + quantity > product.stock:
+                raise ValueError(f"Only {product.stock} in stock")
             existing_item.quantity += quantity
             existing_item.line_total = round(existing_item.unit_price * existing_item.quantity, 2)
             db.session.commit()

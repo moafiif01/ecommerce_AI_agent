@@ -15,7 +15,6 @@ from models.message import Message
 from models.product import Product
 
 from .cart_service import CartService
-from .support_agent_service import SupportAgentService
 from .vector_service import VectorService
 from .rag_service import RAGService
 
@@ -47,8 +46,11 @@ class CancelOrderInput(BaseModel):
     reason: str = Field(default="Annulation demandee par le client", description="Reason for cancellation")
 
 class AddToCartInput(BaseModel):
-    product_id: str = Field(description="Exact database product ID string")
+    product_id: str = Field(description="Product ID, exact product name, or a clear product reference from previous results")
     quantity: int = Field(default=1, description="Quantity to add")
+
+class LookupSupportPolicyInput(BaseModel):
+    query: str = Field(description="Customer support question about returns, shipping, payment, cancellation, or refunds")
 
 
 class ChatService:
@@ -57,7 +59,6 @@ class ChatService:
     def __init__(self):
         self.llm = None
         self.vector_service = VectorService()
-        self.support_agent_service = SupportAgentService()
         self.rag_service = RAGService()
         self.memory_sessions = {}
         self.initialized = False
@@ -68,8 +69,8 @@ class ChatService:
             self.llm = ChatGroq(
                 model=current_app.config["GROQ_MODEL"],
                 groq_api_key=current_app.config["GROQ_API_KEY"],
-                temperature=0.3,
-                max_tokens=1500,
+                temperature=float(current_app.config.get("GROQ_TEMPERATURE", 0.2)),
+                max_tokens=int(current_app.config.get("GROQ_MAX_TOKENS", 1500)),
             )
 
             self.vector_service.initialize()
@@ -117,9 +118,35 @@ class ChatService:
         def _add_to_cart_tool(product_id: str, quantity: int = 1) -> str:
             """Tool function to add an item to the shopping cart."""
             from models.product import Product
-            product = Product.query.get(product_id)
+            cleaned_ref = (product_id or "").strip()
+            quantity = max(1, int(quantity or 1))
+
+            product = Product.query.get(cleaned_ref)
+
+            # If the model does not provide a valid ID, resolve by product name/reference.
+            if not product and cleaned_ref:
+                product = Product.query.filter(Product.name.ilike(cleaned_ref)).first()
+
+            if not product and cleaned_ref:
+                product = Product.query.filter(Product.name.ilike(f"%{cleaned_ref}%")).first()
+
             if not product:
-                return json.dumps({"message": f"Produit avec l'ID {product_id} introuvable.", "product_ids": []})
+                return json.dumps({
+                    "message": f"Produit '{cleaned_ref}' introuvable. Utilisez un ID valide ou un nom de produit exact.",
+                    "product_ids": []
+                })
+
+            if product.stock <= 0:
+                return json.dumps({
+                    "message": f"Le produit {product.name} est en rupture de stock.",
+                    "product_ids": [product.id]
+                })
+
+            if quantity > product.stock:
+                return json.dumps({
+                    "message": f"Quantite demandee indisponible pour {product.name}. Stock actuel: {product.stock}.",
+                    "product_ids": [product.id]
+                })
             
             cart = CartService.get_or_create_cart(
                 user_id=user_id,
@@ -175,12 +202,52 @@ class ChatService:
             ),
             StructuredTool.from_function(
                 name="add_to_cart",
-                description="Add a specific product to the user's shopping cart using its ID.",
+                description="Add a product to cart using product ID or exact product name from previous search results. Never invent IDs.",
                 func=_add_to_cart_tool,
                 args_schema=AddToCartInput
             ),
+            StructuredTool.from_function(
+                name="lookup_support_policy",
+                description="Retrieve support policies and procedures from the internal knowledge base.",
+                func=self._lookup_support_policy_tool,
+                args_schema=LookupSupportPolicyInput,
+            ),
         ]
         return tools
+
+    def _lookup_support_policy_tool(self, query: str) -> str:
+        """Retrieve support policy context from internal RAG knowledge base."""
+        try:
+            top_k = int(current_app.config.get("RAG_TOP_K", 4))
+            min_score = float(current_app.config.get("RAG_SIMILARITY_THRESHOLD", 0.3))
+            chunks = self.rag_service.retrieve_context(query, top_k=top_k, min_score=min_score)
+
+            if not chunks:
+                return json.dumps(
+                    {
+                        "message": "No relevant support policy found in the internal knowledge base.",
+                        "product_ids": [],
+                    }
+                )
+
+            context = self.rag_service.format_context_for_prompt(chunks)
+            best_score = max(chunk.get("score", 0.0) for chunk in chunks)
+            return json.dumps(
+                {
+                    "message": context,
+                    "product_ids": [],
+                    "confidence": best_score,
+                    "source": "support_kb_rag",
+                }
+            )
+        except Exception as e:
+            logger.error("Error in lookup_support_policy_tool: %s", str(e))
+            return json.dumps(
+                {
+                    "message": "Error occurred while retrieving support policies.",
+                    "product_ids": [],
+                }
+            )
 
     def _search_products_tool(self, query: str) -> str:
         """Tool function for semantic product search"""
@@ -457,13 +524,6 @@ class ChatService:
                     elif isinstance(msg, str):
                         chat_history.append(msg)
 
-            support_context = self.support_agent_service.get_support_context(
-                user_message, top_k=3
-            )
-            detected_order_number = self.support_agent_service.extract_order_number(
-                user_message
-            )
-
             system_prompt = """Tu es Storey, l'assistant shopping IA de S-TORE, une boutique en ligne d'electronique.
 Tu aides les clients avec le support client et l'assistance produit dans un ton professionnel, empathique et oriente solution.
 Tu reponds dans la langue du client (francais par defaut, anglais si le client ecrit en anglais).
@@ -484,6 +544,10 @@ Regles et contraintes anti-hallucination :
 - N'invente JAMAIS un statut de commande, un lieu d'expedition ou une date de livraison.
 - Utilise TOUJOURS l'outil track_order pour verifier le statut d'une commande. Ne reponds jamais sans avoir consulte l'outil.
 
+[SUPPORT & POLITIQUES]
+- Pour toute question de support (livraison, retour, remboursement, paiement, annulation, facturation), utilise l'outil lookup_support_policy avant de repondre.
+- Si lookup_support_policy ne retourne rien de fiable, dis que l'information specifique n'est pas disponible plutot que d'inventer.
+
 [POLITIQUES & CGV]
 - Base-toi sur le CONTEXTE DOCUMENTAIRE fourni ci-dessous pour repondre aux questions sur les politiques de retour, livraison, paiement et remboursement.
 - Si l'information n'est pas dans le contexte, dis que tu n'as pas cette information specifique et suggere de contacter le service client.
@@ -498,146 +562,94 @@ Regles et contraintes anti-hallucination :
 
 [ACTIONS PANIER]
 - Si le client demande d'ajouter un article au panier, et que tu as pu identifier de quel article il s'agit de facon non ambigue, utilise OBLIGATOIREMENT l'outil add_to_cart avec son ID.
+- N'utilise JAMAIS un ID invente. Utilise uniquement un ID vu dans les sorties d'outils (search_products, filter_products, get_product_details, get_recommendations) ou passe le nom exact du produit a add_to_cart.
 - Si la demande n'est pas claire, demande des precisions avant. Ne pretends jamais avoir ajoute un article si tu n'as pas appele l'outil.
 """
 
-            # Inject RAG context from FAQ + CGV
-            rag_chunks = self.rag_service.retrieve_context(user_message, top_k=4, min_score=0.3)
+            # Inject RAG context from FAQ + CGV as baseline grounding.
+            rag_top_k = int(current_app.config.get("RAG_TOP_K", 4))
+            rag_min_score = float(current_app.config.get("RAG_SIMILARITY_THRESHOLD", 0.3))
+            rag_chunks = self.rag_service.retrieve_context(user_message, top_k=rag_top_k, min_score=rag_min_score)
             rag_context = self.rag_service.format_context_for_prompt(rag_chunks)
             if rag_context:
                 system_prompt += "\n\n" + rag_context
 
-            if support_context:
-                system_prompt += (
-                    "\n\nContexte additionnel du playbook support (a prioriser si pertinent) :\n"
-                    + support_context
-                )
-
             # Initialize metadata tracking
             response_metadata = {
-                "source": "llm",  # llm, order_tracking, or direct_support
-                "confidence": 0.0,
+                "source": "groq_agent",
+                "confidence": max((chunk.get("score", 0.0) for chunk in rag_chunks), default=0.0),
                 "matched_category": None,
                 "matched_intent": None,
                 "required_data": [],
             }
+            chat_history_msgs = [msg for msg in memory.buffer if isinstance(msg, (HumanMessage, AIMessage, SystemMessage))]
 
-            direct_support_result = self.support_agent_service.get_direct_support_answer_with_metadata(
-                user_message
-            )
-            direct_support_answer = direct_support_result.get("answer")
-            support_meets_threshold = direct_support_result.get("meets_threshold", False)
-            allow_llm_for_support = current_app.config.get(
-                "ALLOW_LLM_FOR_SUPPORT_QUERIES", True
-            )
+            tools = self.create_tools(session_id=session_id, user_id=user_id, cart_session_id=cart_session_id)
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{input}")
+            ])
+            chain = prompt | self.llm.bind_tools(tools)
 
-            direct_order_answer = None
-            if detected_order_number:
-                direct_order_answer = self.support_agent_service.build_order_tracking_answer(
-                    detected_order_number
-                )
+            ai_message = chain.invoke({
+                "input": user_message,
+                "chat_history": chat_history_msgs
+            })
 
-            # Check if guardrail triggered (e.g. out of domain)
-            if direct_support_result.get("source") == "guardrail":
-                message_text = direct_support_result.get("answer")
-                product_ids = []
-                response_metadata["source"] = "guardrail"
-                response_metadata["confidence"] = direct_support_result.get("confidence", 1.0)
-                response_metadata["matched_category"] = direct_support_result.get("category")
-                response_metadata["matched_intent"] = direct_support_result.get("intent")
+            product_ids = []
+            all_tool_product_ids = []
+            tool_support_confidences = []
+
+            if hasattr(ai_message, "tool_calls") and ai_message.tool_calls:
+                messages = prompt.invoke({"input": user_message, "chat_history": chat_history_msgs}).to_messages()
+                messages.append(ai_message)
+                for tool_call in ai_message.tool_calls:
+                    selected_tool = next((t for t in tools if t.name == tool_call["name"]), None)
+                    if selected_tool:
+                        try:
+                            tool_output = selected_tool.invoke(tool_call["args"])
+                            try:
+                                obs_dict = json.loads(tool_output)
+                                if "product_ids" in obs_dict:
+                                    all_tool_product_ids.extend(obs_dict["product_ids"])
+                                if tool_call["name"] == "lookup_support_policy" and "confidence" in obs_dict:
+                                    tool_support_confidences.append(float(obs_dict["confidence"]))
+                            except Exception:
+                                pass
+                            messages.append(ToolMessage(
+                                tool_call_id=tool_call["id"],
+                                content=str(tool_output),
+                                name=tool_call["name"]
+                            ))
+                        except Exception as e:
+                            messages.append(ToolMessage(
+                                tool_call_id=tool_call["id"],
+                                content=json.dumps({"message": f"Error: {str(e)}", "product_ids": []}),
+                                name=tool_call["name"]
+                            ))
+
+                final_ai_message = self.llm.bind_tools(tools).invoke(messages)
+                message_text = final_ai_message.content
             else:
-                response_metadata["matched_category"] = direct_support_result.get("category")
-                response_metadata["matched_intent"] = direct_support_result.get("intent")
-                response_metadata["required_data"] = direct_support_result.get("required_data", [])
+                message_text = ai_message.content
 
-                if not allow_llm_for_support and direct_support_result.get("category"):
-                    needed = direct_support_result.get("required_data", [])
-                    needed_text = (
-                        ", ".join(needed) if needed else "les informations de votre dossier"
-                    )
-                    message_text = (
-                        "Je ne peux pas fournir de reponse non verifiee sur ce sujet pour le moment. "
-                        f"Merci de partager {needed_text} afin que je vous aide correctement."
-                    )
-                    product_ids = []
-                    response_metadata["source"] = "guardrail"
-                    response_metadata["confidence"] = direct_support_result.get("confidence", 0.0)
-                else:
-                # KB answer below threshold or not matched - use LLM with support context
-                    chat_history_msgs = [msg for msg in memory.buffer if isinstance(msg, (HumanMessage, AIMessage, SystemMessage))]
-                    
-                    tools = self.create_tools(session_id=session_id, user_id=user_id, cart_session_id=cart_session_id)
-                    prompt = ChatPromptTemplate.from_messages([
-                        ("system", system_prompt),
-                        MessagesPlaceholder(variable_name="chat_history"),
-                        ("human", "{input}")
-                    ])
-                    chain = prompt | self.llm.bind_tools(tools)
-                    
-                    ai_message = chain.invoke({
-                        "input": user_message,
-                        "chat_history": chat_history_msgs
-                    })
-                    
-                    product_ids = []
-                    all_tool_product_ids = []  # Fallback: collect IDs from all tool outputs
-                    
-                    if hasattr(ai_message, "tool_calls") and ai_message.tool_calls:
-                        messages = prompt.invoke({"input": user_message, "chat_history": chat_history_msgs}).to_messages()
-                        messages.append(ai_message)
-                        for tool_call in ai_message.tool_calls:
-                            selected_tool = next((t for t in tools if t.name == tool_call["name"]), None)
-                            if selected_tool:
-                                try:
-                                    tool_output = selected_tool.invoke(tool_call["args"])
-                                    # Collect IDs from tool output as fallback
-                                    try:
-                                        obs_dict = json.loads(tool_output)
-                                        if "product_ids" in obs_dict:
-                                            all_tool_product_ids.extend(obs_dict["product_ids"])
-                                    except:
-                                        pass
-                                    messages.append(ToolMessage(
-                                        tool_call_id=tool_call["id"],
-                                        content=str(tool_output),
-                                        name=tool_call["name"]
-                                    ))
-                                except Exception as e:
-                                    messages.append(ToolMessage(
-                                        tool_call_id=tool_call["id"],
-                                        content=json.dumps({"message": f"Error: {str(e)}", "product_ids": []}),
-                                        name=tool_call["name"]
-                                    ))
-                        
-                        final_ai_message = self.llm.bind_tools(tools).invoke(messages)
-                        message_text = final_ai_message.content
-                    else:
-                        message_text = ai_message.content
-                    
-                    # Clean raw function-call artifacts from message text
-                    message_text = re.sub(r'</?function[^>]*>', '', message_text)
-                    message_text = re.sub(r'\{"name"\s*:\s*"\w+".*?\}', '', message_text)
-                    message_text = re.sub(r'\s{2,}', ' ', message_text).strip()
-                        
-                    # Extract LLM-endorsed IDs; fall back to tool output IDs
-                    rendered_ids_match = re.search(r'\[RECOMMENDED_IDS:\s*(.*?)\]', message_text)
-                    if rendered_ids_match:
-                        ids_raw = rendered_ids_match.group(1)
-                        product_ids = [pid.strip() for pid in ids_raw.split(',') if pid.strip() and pid.strip() != 'None']
-                        message_text = re.sub(r'\[RECOMMENDED_IDS:.*?\]', '', message_text).strip()
-                    elif all_tool_product_ids:
-                        # LLM didn't emit the tag; use tool-returned IDs as fallback
-                        product_ids = all_tool_product_ids
-                        
-                    product_ids = list(dict.fromkeys(product_ids)) # Remove duplicates
-                    
-                    response_metadata["source"] = "llm"
-                    response_metadata["confidence"] = 0.0  # LLM responses have no explicit score
+            # Clean raw function-call artifacts from message text
+            message_text = re.sub(r'</?function[^>]*>', '', message_text)
+            message_text = re.sub(r'\{"name"\s*:\s*"\w+".*?\}', '', message_text)
+            message_text = re.sub(r'\s{2,}', ' ', message_text).strip()
 
-            if direct_support_result.get("matched_question"):
-                response_metadata["matched_question"] = direct_support_result.get(
-                    "matched_question"
-                )
+            rendered_ids_match = re.search(r'\[RECOMMENDED_IDS:\s*(.*?)\]', message_text)
+            if rendered_ids_match:
+                ids_raw = rendered_ids_match.group(1)
+                product_ids = [pid.strip() for pid in ids_raw.split(',') if pid.strip() and pid.strip() != 'None']
+                message_text = re.sub(r'\[RECOMMENDED_IDS:.*?\]', '', message_text).strip()
+            elif all_tool_product_ids:
+                product_ids = all_tool_product_ids
+
+            product_ids = list(dict.fromkeys(product_ids))
+            if tool_support_confidences:
+                response_metadata["confidence"] = max(response_metadata["confidence"], max(tool_support_confidences))
 
             memory.buffer.append(HumanMessage(content=user_message))
             memory.buffer.append(AIMessage(content=message_text))
@@ -688,10 +700,16 @@ Regles et contraintes anti-hallucination :
 
         except Exception as e:
             logger.error(f"Error processing message: {str(e)}")
+            error_text = str(e).lower()
+            if "rate_limit" in error_text or "429" in error_text:
+                fallback_content = "Le service IA est temporairement surcharge. Merci de reessayer dans quelques secondes."
+            else:
+                fallback_content = "I'm sorry, I encountered an error. Please try again."
+
             error_msg = Message(
                 id=str(uuid.uuid4()),
                 chat_session_id=session_id,
-                content="I'm sorry, I encountered an error. Please try again.",
+                content=fallback_content,
                 is_bot=True,
             )
             from app import db
