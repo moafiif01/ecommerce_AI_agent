@@ -39,8 +39,7 @@ Python 3.10+
 PostgreSQL instance
 
 2. Installation
-Bash
-git clone [https://github.com/moafiif01/ecommerce_AI_agent.git](https://github.com/moafiif01/ecommerce_AI_agent.git)
+git clone https://github.com/moafiif01/ecommerce_AI_agent.git
 cd ecommerce_AI_agent
 pip install -r requirements.txt
 3. Running the Test Suite
